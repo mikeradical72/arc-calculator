@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>BaseAcre · ARC-IC vs ARC-CO vs PLC calculator (2026)</title>
+<meta name="description" content="Run ARC-IC, ARC-CO and PLC side by side for your farm. 2026 FSA benchmarks for Wilkin County MN and Richland County ND built in.">
+<meta name="theme-color" content="#1b1f1c">
+<link rel="icon" href="img/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-in">
+    <a class="brand" href="./" aria-label="BaseAcre home">
+      <svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><rect x="3" y="24" width="9" height="13" rx="2" fill="#d9a441"/><rect x="15.5" y="15" width="9" height="22" rx="2" fill="#3f9a4b"/><rect x="28" y="5" width="9" height="32" rx="2" fill="#1e5b3a"/></svg>
+      <span><b>BaseAcre</b><small>ARC-IC · ARC-CO · PLC</small></span>
+    </a>
+    <div class="top-actions">
+      <button class="btn sm ghost" id="btnPrint" type="button">Print / PDF</button>
+      <button class="btn sm primary" id="btnExportAll" type="button">Save slides as PNG</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="intro">
+    <h1>Which program pays your farm more in 2026?</h1>
+    <p>Enter your crops once and see ARC-IC, ARC-CO and PLC side by side, with every step of the math. 2026 FSA county benchmarks for Wilkin County, MN and Richland County, ND are built in.</p>
+  </section>
+
+  <section class="panel" id="setup">
+    <div class="setup-grid">
+      <label class="fld"><span>Farm name</span><input id="farmName" type="text" maxlength="60" autocomplete="off"></label>
+      <label class="fld"><span>County</span>
+        <select id="county">
+          <option value="wilkin">Wilkin County, MN</option>
+          <option value="richland">Richland County, ND</option>
+          <option value="cass">Cass County, ND</option>
+          <option value="custom">Other county (enter your own)</option>
+        </select></label>
+      <label class="fld"><span>Corn &amp; soybean practice</span>
+        <select id="practice"><option value="Nonirrigated">Non-irrigated</option><option value="Irrigated">Irrigated</option></select></label>
+      <div class="fld fld-btns">
+        <span>Presets</span>
+        <div class="row wrap">
+          <button class="btn sm" id="btnCountyPreset" type="button">Reload county figures</button>
+          <button class="btn sm accent" id="btnCass" type="button">Load Cass County Scenario #3</button>
+        </div>
+      </div>
+    </div>
+    <div class="row wrap legend">
+      <span class="chip src-arcco">FSA county data</span>
+      <span class="chip src-prices">FSA prices</span>
+      <span class="chip src-slide">Slide example</span>
+      <span class="chip src-est">Estimate: replace with yours</span>
+      <span class="chip src-you">Your number</span>
+      <label class="check"><input type="checkbox" id="seq"> Subtract 5.7% sequestration</label>
+    </div>
+    <p class="note" id="countyNote"></p>
+    <div id="crops"></div>
+    <div class="row wrap add-row">
+      <select id="addCrop"><option>Corn</option><option>Soybeans</option><option>Wheat</option><option value="Other">Other crop…</option></select>
+      <button class="btn sm" id="btnAdd" type="button">+ Add crop</button>
+      <span class="grow"></span>
+      <button class="btn sm ghost danger" id="btnReset" type="button">Reset everything</button>
+    </div>
+  </section>
+
+  <section class="tiles" id="tiles" aria-live="polite"></section>
+
+  <section id="slides"></section>
+
+  <footer class="foot">
+    <h3>Assumptions</h3>
+    <ul>
+      <li><b>Before sequestration</b> unless you tick the box. Simplified: no payment limits, AGI test, or ARC-IC rules for crops with no history; FSA's own rounding can move totals by a few dollars.</li>
+      <li><b>ARC-CO:</b> each crop's guarantee is 90% of county benchmark revenue (county benchmark yield × benchmark price). It pays the shortfall below that, capped at 12% of benchmark revenue, on 85% of that crop's base acres.</li>
+      <li><b>ARC-IC:</b> each crop's benchmark revenue is your farm's ARC-IC benchmark yield (2020–24 FSA history, high and low years dropped; not crop-insurance APH) × benchmark price, blended by planted acres. It pays the shortfall below 90%, capped at 12%, on 65% of the farm's total base acres. Electing ARC-IC covers every crop's base on that FSA farm.</li>
+      <li><b>PLC:</b> the rate is the effective reference price minus the higher of the MYA price or the loan rate. It pays that rate × your PLC yield on 85% of base. PLC yields here are FSA county averages; use the ones on your FSA-156EZ.</li>
+      <li>Prices are the national marketing-year average (MYA), not local cash. 2026 county yields aren't published yet; FSA posts them in fall 2027, and payments come after Oct. 1, 2027.</li>
+      <li>This is an estimate, not a USDA determination. Check with your county FSA office before you elect.</li>
+    </ul>
+    <h3>Sources</h3>
+    <ul id="sources"></ul>
+    <p class="muted tiny">Inspired by Justin Frye's ARC-IC scenario posts. BaseAcre isn't affiliated with Cropland or USDA. Your numbers stay in this browser (localStorage).</p>
+  </footer>
+</main>
+<div id="exportStage" aria-hidden="true"></div>
+<script src="vendor/html2canvas.min.js" defer></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
