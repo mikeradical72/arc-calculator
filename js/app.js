@@ -275,3 +275,14 @@ function init() {
   $('#btnPrint').addEventListener('click', () => window.print());
 }
 init();
+
+// Hook for the land finder: switch the calculator to a parcel's county, keeping numbers the user typed.
+window.BaseAcreARC = {
+  useCounty(key, farmName) {
+    if (!COUNTIES[key]) return;
+    if (state.preset === 'cass3' || state.county === 'custom' || !state.crops.length) state = buildPreset(key, state.practice || 'Nonirrigated');
+    else applyCounty(key);
+    if (farmName) state.farmName = farmName;
+    save(); renderEditor(); renderOutput();
+  },
+};

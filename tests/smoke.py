@@ -8,7 +8,7 @@ async def main():
         ctx = await b.new_context(viewport={'width': 1366, 'height': 900}, device_scale_factor=1, accept_downloads=True)
         pg = await ctx.new_page(); errs = []
         pg.on('pageerror', lambda e: errs.append(str(e))); pg.on('console', lambda m: m.type == 'error' and errs.append(m.text))
-        await pg.goto(URL); await pg.wait_for_selector('#slide-5')
+        await pg.goto(URL + '#arc'); await pg.wait_for_selector('#slide-5')
         await pg.screenshot(path=f'{OUT}/desktop-wilkin.png', full_page=True)
         await pg.screenshot(path=f'{OUT}/desktop.png')
         pg.on('dialog', lambda d: asyncio.ensure_future(d.accept()))
@@ -26,7 +26,7 @@ async def main():
         await pg.reload(); await pg.wait_for_selector('#slide-5'); print('persisted cass:', '$33,465' in await pg.inner_text('#slides'))
         m = await b.new_context(viewport={'width': 412, 'height': 915}, device_scale_factor=2, is_mobile=True, has_touch=True)
         mp = await m.new_page(); mp.on('pageerror', lambda e: errs.append(str(e)))
-        await mp.goto(URL); await mp.wait_for_selector('#slide-5')
+        await mp.goto(URL + '#arc'); await mp.wait_for_selector('#slide-5')
         await mp.screenshot(path=f'{OUT}/mobile-wilkin.png', full_page=False)
         await mp.screenshot(path=f'{OUT}/mobile-full.png', full_page=True)
         await mp.click('#btnCass'); await mp.wait_for_timeout(300)

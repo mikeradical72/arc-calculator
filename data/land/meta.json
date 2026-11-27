@@ -1,0 +1,12 @@
+{
+ "built": "2026-11-27",
+ "minAcres": 10.0,
+ "counties": {
+  "wilkin": {
+   "count": 4748
+  },
+  "richland": {
+   "count": 8595
+  }
+ }
+}

@@ -3,28 +3,85 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>BaseAcre · ARC-IC vs ARC-CO vs PLC calculator (2026)</title>
-<meta name="description" content="Run ARC-IC, ARC-CO and PLC side by side for your farm. 2026 FSA benchmarks for Wilkin County MN and Richland County ND built in.">
+<title>BaseAcre · Find farmland in Wilkin Co., MN &amp; Richland Co., ND</title>
+<meta name="description" content="Map every farm-size parcel in Wilkin County, MN and Richland County, ND with soil productivity, cropland share and owner type. Rule parcels out with a tap. Plus an ARC/PLC calculator.">
 <meta name="theme-color" content="#1b1f1c">
 <link rel="icon" href="img/icon.svg" type="image/svg+xml">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/land.css">
 </head>
 <body>
 <header class="top">
   <div class="wrap top-in">
     <a class="brand" href="./" aria-label="BaseAcre home">
       <svg class="logo" viewBox="0 0 40 40" aria-hidden="true"><rect x="3" y="24" width="9" height="13" rx="2" fill="#d9a441"/><rect x="15.5" y="15" width="9" height="22" rx="2" fill="#3f9a4b"/><rect x="28" y="5" width="9" height="32" rx="2" fill="#1e5b3a"/></svg>
-      <span><b>BaseAcre</b><small>ARC-IC · ARC-CO · PLC</small></span>
+      <span><b>BaseAcre</b><small>Land finder · ARC/PLC</small></span>
     </a>
-    <div class="top-actions">
+    <nav class="tabs" role="tablist">
+      <a href="#land" role="tab" id="tabLand" class="tab">Land finder</a>
+      <a href="#arc" role="tab" id="tabArc" class="tab">ARC/PLC</a>
+    </nav>
+    <div class="top-actions arc-only">
       <button class="btn sm ghost" id="btnPrint" type="button">Print / PDF</button>
       <button class="btn sm primary" id="btnExportAll" type="button">Save slides as PNG</button>
     </div>
   </div>
 </header>
 
-<main class="wrap">
+<main id="view-land" class="land" hidden>
+  <div class="land-bar">
+    <div class="lb-counts"><b id="lcShown">–</b> parcels shown <span class="muted" id="lcOf"></span></div>
+    <div class="lb-actions">
+      <button class="btn sm" id="lbUndo" type="button" disabled>Undo</button>
+      <label class="tgl"><input type="checkbox" id="lbShowHidden"> Show ruled out <b id="lcHidden">0</b></label>
+      <button class="btn sm ghost danger" id="lbRestore" type="button" disabled>Restore all</button>
+    </div>
+  </div>
+  <div class="land-grid">
+    <div class="map-wrap">
+      <div id="map" aria-label="Map of parcels"></div>
+      <div class="map-mode" role="group" aria-label="What a tap does">
+        <button type="button" data-mode="out" class="on">Tap rules out</button><button type="button" data-mode="inspect">Tap shows details</button>
+      </div>
+      <div class="legend-box" id="legend"></div>
+      <div class="toast" id="toast" hidden></div>
+    </div>
+    <aside class="side">
+      <details class="filters" id="filtersBox" open>
+        <summary>Filters <span class="badge" id="fCount"></span></summary>
+        <div class="fgrid">
+          <label class="fl"><span>County</span><select id="fCounty"><option value="all">Both counties</option><option value="wilkin">Wilkin County, MN</option><option value="richland">Richland County, ND</option></select></label>
+          <label class="fl"><span>Acres</span><span class="pair"><input id="fAcMin" type="number" inputmode="decimal" min="0" placeholder="min"><span>to</span><input id="fAcMax" type="number" inputmode="decimal" min="0" placeholder="max"></span></label>
+          <label class="fl"><span>Soil productivity (NCCPI) at least <b id="vNc">any</b></span><input id="fNc" type="range" min="0" max="75" step="5" value="0"></label>
+          <label class="fl"><span>Cropland in 2025 at least <b id="vCrop">any</b></span><input id="fCrop" type="range" min="0" max="100" step="5" value="0"></label>
+          <label class="fl"><span>Class I–II soils at least <b id="vLcc">any</b></span><input id="fLcc" type="range" min="0" max="100" step="5" value="0"></label>
+          <label class="fl"><span>Owner name, PIN or legal</span><input id="fQ" type="search" placeholder="e.g. Trust, 11-017, SE1/4" autocomplete="off"></label>
+          <label class="check fl-check"><input type="checkbox" id="fAbs"> Owner mails from outside MN/ND</label>
+          <div class="fl"><span>Owner type</span><div class="chips" id="fOtype"></div></div>
+          <div class="fl"><span>2025 main crop (CDL)</span><div class="chips" id="fCrops"></div></div>
+          <details class="fl sub"><summary>Township <span class="badge" id="fTwpCount"></span></summary><div class="twps" id="fTwps"></div></details>
+          <details class="fl sub"><summary>Assessor land class <span class="badge" id="fClsCount"></span></summary><div class="twps" id="fClasses"></div></details>
+          <div class="row wrap"><label class="fl grow"><span>Color map by</span><select id="fColor"><option value="nccpi">Soil productivity</option><option value="crop">Cropland share</option><option value="otype">Owner type</option></select></label>
+          <label class="fl grow"><span>Basemap</span><select id="fBase"><option value="sat">Satellite</option><option value="osm">Street map</option></select></label></div>
+          <button class="btn sm ghost" id="fReset" type="button">Clear filters</button>
+        </div>
+      </details>
+      <div class="list-head">
+        <label class="check"><input type="checkbox" id="lInView" checked> Only what's on the map</label>
+        <select id="lSort" aria-label="Sort"><option value="nccpi">Best soil first</option><option value="acres">Largest first</option><option value="acresAsc">Smallest first</option><option value="crop">Most cropland first</option><option value="valac">Lowest land value/ac first</option></select>
+      </div>
+      <p class="tiny muted list-hint">Tap a parcel on the map or in the list to rule it out. Tap the target button to zoom to it, or <b>i</b> for details.</p>
+      <ul class="plist" id="plist"></ul>
+      <button class="btn sm block" id="lMore" type="button" hidden>Show more</button>
+      <div class="inspect" id="inspect" hidden></div>
+      <details class="sources" id="landSources"><summary>Data sources and gaps</summary><div id="landSourcesBody"></div></details>
+    </aside>
+  </div>
+</main>
+
+<main class="wrap" id="view-arc" hidden>
   <section class="intro">
     <h1>Which program pays your farm more in 2026?</h1>
     <p>Enter your crops once and see ARC-IC, ARC-CO and PLC side by side, with every step of the math. 2026 FSA county benchmarks for Wilkin County, MN and Richland County, ND are built in.</p>
@@ -89,6 +146,8 @@
 </main>
 <div id="exportStage" aria-hidden="true"></div>
 <script src="vendor/html2canvas.min.js" defer></script>
+<script src="vendor/leaflet/leaflet.js"></script>
 <script type="module" src="js/app.js"></script>
+<script type="module" src="js/land.js"></script>
 </body>
 </html>
