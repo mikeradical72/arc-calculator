@@ -35,6 +35,9 @@ Parcel size sits at the top of the search panel: **~40 ac (35–45)**, **~80 ac 
 ### Separate searches (tabs)
 Each tab above the map is its own search, with its own filters (size, name, states, soil…), its own **ruled-out list**, sort order and map view. Tapping a parcel rules it out only in the active tab. Use **+ New** to add a tab; the **⋯** menu has Rename, Duplicate, Export as JSON, Import JSON and Delete. On phones the tab strip scrolls sideways. Everything is saved in localStorage (key `baseacre:land:v1`, format v2). Older saves move over on first load: the old global ruled-out list and filters go into the default (or active) tab.
 
+### Rule out all results
+The red **Rule out all N** button in the top bar rules out every parcel the current tab's search and filters match. That means all N matches, not just the list page or the map view, and it happens in one click with no confirmation. A toast with **Undo** (the top-bar Undo works too) brings back exactly the parcels that click ruled out. The button only changes the active tab's ruled-out list and is hidden when nothing matches.
+
 ### Owner / taxpayer name and mailing state
 - **Name search**: case-insensitive partial match on the owner name **and** the taxpayer name (e.g. `yaggie`). Matches are highlighted in the list.
 - **Mailing state**: a multi-select of every state in the data, with counts, plus **Unknown** and **Outside MN/ND**. A parcel matches if the owner's or the taxpayer's mailing state is one you picked (OR).

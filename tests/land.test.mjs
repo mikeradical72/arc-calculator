@@ -101,3 +101,22 @@ ok(evil.acMin === '' && evil.states.join() === 'ND' && !('bogus' in evil), 'impo
 let nextId = removeSearch(list, imp.id); ok(list.length === 3 && nextId === list[2].id, 'delete search picks a neighbour');
 const solo = [newSearch('only')]; removeSearch(solo, solo[0].id); ok(solo.length === 1 && solo[0].name === 'Search 1', 'deleting the last search leaves a fresh one');
 console.log('SEARCH/NAME/STATE TESTS PASSED');
+
+// ---- one-click "Rule out all results" ----
+{
+  const { ruleOutTargets } = await import('../js/landcore.js');
+  const ff = freshFilters(); ff.name = 'Yaggie';
+  const tab = new Hidden(['X1']);              // active tab's list
+  const other = new Hidden(['O1']);            // another tab's list
+  const pre = ALL.find((p) => /yaggie/i.test(p.tp || p.own || '')); tab.hide(pre.id);   // one Yaggie parcel already ruled out by hand
+  const targets = ruleOutTargets(ALL, ff, tab);
+  ok(targets.length === 258 && !targets.includes(pre.id), `targets = all matches not yet ruled out (${targets.length})`);
+  const done = tab.hideMany(targets);
+  ok(done.length === 258 && tab.size === 260 && ruleOutTargets(ALL, ff, tab).length === 0, 'rule out all hides every match (0 left)');
+  ok(other.toJSON().join() === 'O1', 'other tab list untouched');
+  ok(tab.hideMany(targets).length === 0, 'second click is a no-op');
+  ok(tab.restoreMany(done) === 258 && tab.toJSON().join() === ['X1', pre.id].join(), 'undo restores exactly that batch, keeps earlier ones');
+  const f0 = freshFilters(); f0.name = 'zzzz-none';
+  ok(ruleOutTargets(ALL, f0, tab).length === 0, 'no results -> nothing to rule out');
+  console.log('RULE OUT ALL TESTS PASSED');
+}

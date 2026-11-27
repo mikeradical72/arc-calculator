@@ -55,6 +55,10 @@ export class Hidden {
   restore(id) { if (!this.set.delete(id)) return false; this.stack = this.stack.filter((x) => x !== id); return true; }
   undo() { const id = this.stack.pop(); if (id != null) this.set.delete(id); return id ?? null; }
   last() { return this.stack.length ? this.stack[this.stack.length - 1] : null; }
+  // Bulk rule-out: returns the ids this call newly hid (already-hidden ones are skipped), in order.
+  hideMany(ids) { const out = []; for (const id of ids) if (this.hide(id)) out.push(id); return out; }
+  // Restore exactly these ids (e.g. undo of one bulk click); returns how many came back.
+  restoreMany(ids) { const rm = new Set(ids.filter((id) => this.set.has(id))); rm.forEach((id) => this.set.delete(id)); this.stack = this.stack.filter((x) => !rm.has(x)); return rm.size; }
   reset(ids = []) { this.stack = [...new Set(ids)]; this.set = new Set(this.stack); }
   clear() { const n = this.set.size; this.set.clear(); this.stack = []; return n; }
   toJSON() { return this.stack; }
@@ -93,6 +97,9 @@ export function acreLabel(f) {
   if (mn == null) return `up to ${mx} ac`;
   return `${mn}–${mx} ac`;
 }
+
+// Everything the current filters show that isn't ruled out yet — all matches, not just the list page or map view.
+export function ruleOutTargets(parcels, f, hidden) { return parcels.filter((p) => matches(p, f) && !hidden.has(p.id)).map((p) => p.id); }
 
 // Mailing states for a parcel (owner's and taxpayer's); 'Unknown' when the source gives none.
 export const statesOf = (p) => (p.sts && p.sts.length ? p.sts : ['Unknown']);

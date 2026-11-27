@@ -1,4 +1,4 @@
-import { matches, freshFilters, Hidden, SORTS, activeFilterCount, perAcre, ACRE_PRESETS, presetFor, applyPreset, acreLabel, statesOf, OUTSIDE, stateCounts, newSearch, uniqueName, duplicateSearch, removeSearch, migrateStore, exportSearch, importSearch } from './landcore.js';
+import { ruleOutTargets, matches, freshFilters, Hidden, SORTS, activeFilterCount, perAcre, ACRE_PRESETS, presetFor, applyPreset, acreLabel, statesOf, OUTSIDE, stateCounts, newSearch, uniqueName, duplicateSearch, removeSearch, migrateStore, exportSearch, importSearch } from './landcore.js';
 
 const KEY = 'baseacre:land:v1';   // same key; contents migrate to v2 (separate searches) on first load
 const $ = (s, el = document) => el.querySelector(s);
@@ -127,6 +127,8 @@ function renderCounts() {
   const total = P.length;
   $('#lcOf').textContent = `of ${total.toLocaleString('en-US')}` + (S.filters.acMin !== '' || S.filters.acMax !== '' ? ` · ${acreLabel(S.filters)}` : '') + (activeFilterCount(S.filters) ? ' · filtered' : '') + (matchingHidden ? ` · ${matchingHidden.toLocaleString('en-US')} ruled out here` : '');
   $('#lcHidden').textContent = hidden.size.toLocaleString('en-US');
+  const rb = $('#lbRuleAll'); rb.hidden = !shown; rb.disabled = !shown; $('#lbRuleAllN').textContent = shown.toLocaleString('en-US');
+  rb.setAttribute('aria-label', `Rule out all ${shown} parcels in this search`);
   $('#lbUndo').disabled = !hidden.size; $('#lbRestore').disabled = !hidden.size;
   const n = activeFilterCount(S.filters); $('#fCount').textContent = n ? n : '';
 }
@@ -155,7 +157,24 @@ function restoreOne(id, redrawAll = false) {
     renderCounts();
   } else redraw();
 }
+// Last bulk "Rule out all" in this tab, so Undo restores exactly that batch.
+let lastBatch = null;
+function batchIsLast() { return lastBatch && lastBatch.length && hidden.last() === lastBatch[lastBatch.length - 1]; }
+function ruleOutAll() {
+  const ids = ruleOutTargets(P, S.filters, hidden); if (!ids.length) return;
+  const done = hidden.hideMany(ids); lastBatch = done;
+  save(); redraw();
+  const t = $('#toast');
+  t.innerHTML = `<span>Ruled out ${done.length.toLocaleString('en-US')} parcels</span><button type="button" id="toastUndo">Undo</button>`;
+  t.hidden = false; clearTimeout(toastT); toastT = setTimeout(hideToast, 8000);
+  $('#toastUndo').onclick = (e) => { e.stopPropagation(); undoBatch(); };
+}
+function undoBatch() {
+  if (!lastBatch) return; const n = hidden.restoreMany(lastBatch); lastBatch = null;
+  save(); redraw(); hideToast(); if (n) toastMsg(`Restored ${n.toLocaleString('en-US')} parcels`);
+}
 function undo() {
+  if (batchIsLast()) { undoBatch(); return; }
   const id = hidden.undo(); if (!id) return;
   save(); redraw(); flash(id); hideToast();
 }
@@ -309,7 +328,7 @@ function switchTo(id) {
 function loadActive() {
   for (const k of Object.keys(S.filters)) delete S.filters[k];
   Object.assign(S.filters, JSON.parse(JSON.stringify(A.filters)));
-  hidden.reset(A.hidden); S.sort = A.sort;
+  hidden.reset(A.hidden); S.sort = A.sort; lastBatch = null;
   $('#inspect').hidden = true; hideToast();
   buildFilterUI();
   if (A.view) { S.view = A.view; map.setView(A.view.c, A.view.z, { animate: false }); } else S.view = A.view = { c: [map.getCenter().lat, map.getCenter().lng], z: map.getZoom() };
@@ -396,8 +415,9 @@ function wire() {
   $('#lInView').onchange = (e) => { S.inView = e.target.checked; save(); renderList(); };
   $('#lMore').onclick = () => { listShown += PAGE; renderList(false); };
   $('#lbUndo').onclick = undo;
+  $('#lbRuleAll').onclick = ruleOutAll;
   $('#lbShowHidden').onchange = (e) => { S.showHidden = e.target.checked; save(); redraw(); };
-  $('#lbRestore').onclick = () => { if (!hidden.size) return; hidden.clear(); save(); redraw(); hideToast(); };
+  $('#lbRestore').onclick = () => { if (!hidden.size) return; hidden.clear(); lastBatch = null; save(); redraw(); hideToast(); };
   document.querySelectorAll('.map-mode button').forEach((b) => { b.classList.toggle('on', b.dataset.mode === S.mode); b.onclick = () => { S.mode = b.dataset.mode; save(); document.querySelectorAll('.map-mode button').forEach((x) => x.classList.toggle('on', x === b)); }; });
   $('#plist').addEventListener('click', (e) => {
     const li = e.target.closest('.pi'); if (!li) return; const id = li.dataset.id; const act = e.target.closest('button')?.dataset.act;
