@@ -49,11 +49,26 @@
       <div class="toast" id="toast" hidden></div>
     </div>
     <aside class="side">
+      <div class="saved" id="savedBox">
+        <div class="saved-row">
+          <select id="sSelect" aria-label="Saved searches"><option value="">Saved searches…</option></select>
+          <button class="btn sm primary" id="sSave" type="button">Save search</button>
+        </div>
+        <div class="saved-row tiny" id="sActive" hidden>
+          <span id="sActiveLabel"></span><span class="grow"></span>
+          <button class="btn icon" id="sUpdate" type="button" hidden>Update</button>
+          <button class="btn icon ghost danger" id="sDelete" type="button">Delete</button>
+        </div>
+      </div>
+      <div class="size-box" id="sizeBox">
+        <div class="size-head"><span>Parcel size</span><b id="vSize">any size</b></div>
+        <div class="size-chips" id="fSize" role="group" aria-label="Parcel size presets"></div>
+        <div class="pair size-custom"><label>Min acres<input id="fAcMin" type="number" inputmode="decimal" min="0" placeholder="no min"></label><span>to</span><label>Max acres<input id="fAcMax" type="number" inputmode="decimal" min="0" placeholder="no max"></label></div>
+      </div>
       <details class="filters" id="filtersBox" open>
         <summary>Filters <span class="badge" id="fCount"></span></summary>
         <div class="fgrid">
           <label class="fl"><span>County</span><select id="fCounty"><option value="all">Both counties</option><option value="wilkin">Wilkin County, MN</option><option value="richland">Richland County, ND</option></select></label>
-          <label class="fl"><span>Acres</span><span class="pair"><input id="fAcMin" type="number" inputmode="decimal" min="0" placeholder="min"><span>to</span><input id="fAcMax" type="number" inputmode="decimal" min="0" placeholder="max"></span></label>
           <label class="fl"><span>Soil productivity (NCCPI) at least <b id="vNc">any</b></span><input id="fNc" type="range" min="0" max="75" step="5" value="0"></label>
           <label class="fl"><span>Cropland in 2025 at least <b id="vCrop">any</b></span><input id="fCrop" type="range" min="0" max="100" step="5" value="0"></label>
           <label class="fl"><span>Class I–II soils at least <b id="vLcc">any</b></span><input id="fLcc" type="range" min="0" max="100" step="5" value="0"></label>

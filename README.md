@@ -28,3 +28,8 @@ The ARC-IC vs ARC-CO vs PLC calculator (`#arc`), unchanged. `node tests/calc.tes
 `node tests/calc.test.mjs`, `node tests/land.test.mjs`, `python3 tests/smoke.py <url>`, `python3 tests/land_smoke.py <url>`
 
 Estimates and public records only. This app doesn't show whether land is for sale or rent, and it isn't a survey. Not affiliated with USDA or either county.
+
+### Parcel size and saved searches
+- **Parcel size** sits at the top of the search panel (always visible, also on phones): quick presets **~40 ac (35–45)**, **~80 ac (75–85)**, **~160 ac (150–170)**, **320+ ac (300 and up)**, or **Any size**, plus custom min/max acre boxes. Ranges are inclusive and use GIS acres.
+- **Saved searches**: "Save search" stores a named copy of the current filters — parcel size included — so each saved search has its own acre range, county, township, soil and other filters. Pick one from the dropdown to load it; if you change it, an **Update** button appears; **Delete** removes it. Saved searches live in localStorage. Ruled-out parcels are shared across searches.
+- Acres are shown in bold on every list row and at the top of the details panel (GIS acres, plus deeded acres where the county lists them).

@@ -27,6 +27,50 @@ async def main():
         await pg.fill('#fAcMin', '150'); await pg.fill('#fAcMax', '170'); await pg.wait_for_timeout(500)
         q = await num(pg, '#lcShown'); check(0 < q < total, f'acre range 150-170 -> {q}')
         await pg.click('#fReset'); await pg.wait_for_timeout(400)
+        # parcel size presets
+        async def row_acres(page):
+            return [float(t.replace(',', '').replace(' ac', '')) for t in await page.locator('#plist .pi .acbig').all_inner_texts()]
+        await pg.uncheck('#lInView'); await pg.wait_for_timeout(300)
+        sizes = {}
+        for k, lo, hi in [('40', 35, 45), ('80', 75, 85), ('160', 150, 170), ('320', 300, None)]:
+            await pg.click(f'#fSize button[data-k="{k}"]'); await pg.wait_for_timeout(400)
+            n = await num(pg, '#lcShown'); ac = await row_acres(pg); sizes[k] = n
+            on = await pg.get_attribute(f'#fSize button[data-k="{k}"]', 'aria-pressed')
+            check(0 < n < total and ac and all(lo <= a and (hi is None or a <= hi) for a in ac) and on == 'true'
+                  and await pg.input_value('#fAcMin') == str(lo) and await pg.input_value('#fAcMax') == ('' if hi is None else str(hi)),
+                  f'size preset ~{k}: {n} parcels, list rows {min(ac) if ac else None}-{max(ac) if ac else None} ac')
+        check(sizes['160'] == q, 'preset ~160 matches typed 150-170 range')
+        await pg.fill('#fAcMin', '60'); await pg.fill('#fAcMax', '100'); await pg.wait_for_timeout(400)
+        ac = await row_acres(pg)
+        check(all(60 <= a <= 100 for a in ac) and 'custom' in await pg.inner_text('#vSize') and await pg.locator('#fSize button.on').count() == 0, 'custom min/max 60-100 (no preset lit)')
+        # saved searches each keep their own parcel size
+        pg.once('dialog', lambda d: asyncio.ensure_future(d.accept('Quarters')))
+        await pg.click('#fSize button[data-k="160"]'); await pg.wait_for_timeout(300)
+        await pg.click('#sSave'); await pg.wait_for_timeout(300)
+        pg.once('dialog', lambda d: asyncio.ensure_future(d.accept('Richland 40s')))
+        await pg.select_option('#fCounty', 'richland'); await pg.click('#fSize button[data-k="40"]'); await pg.wait_for_timeout(300)
+        await pg.click('#sSave'); await pg.wait_for_timeout(300)
+        saved = await pg.evaluate('window.__land.S.searches')
+        check(len(saved) == 2 and saved[0]['filters']['acMin'] in (150, '150') and saved[1]['filters']['acMax'] in (45, '45') and saved[1]['filters']['county'] == 'richland', 'two saved searches with their own sizes')
+        qid = saved[0]['id']
+        await pg.select_option('#sSelect', qid); await pg.wait_for_timeout(500)
+        check(await pg.input_value('#fAcMin') == '150' and await pg.input_value('#fAcMax') == '170' and await pg.input_value('#fCounty') == 'all' and await num(pg, '#lcShown') == q, 'loading "Quarters" restores its 150-170 size + county')
+        await pg.fill('#fAcMax', '200'); await pg.wait_for_timeout(300)
+        check(await pg.is_visible('#sUpdate') and 'edited' in await pg.inner_text('#sActiveLabel'), 'editing a saved search shows Update')
+        await pg.click('#sUpdate'); await pg.wait_for_timeout(300)
+        await pg.reload(); await pg.wait_for_selector('body[data-land-ready="1"]', timeout=60000)
+        s2 = await pg.evaluate('window.__land.S.searches')
+        check(len(s2) == 2 and str(s2[0]['filters']['acMax']) == '200' and await pg.input_value('#fAcMax') == '200' and await pg.input_value('#sSelect') == qid, 'saved searches + size persist after reload')
+        pg.once('dialog', lambda d: asyncio.ensure_future(d.accept()))
+        await pg.click('#sDelete'); await pg.wait_for_timeout(300)
+        pg.once('dialog', lambda d: asyncio.ensure_future(d.accept()))
+        await pg.select_option('#sSelect', s2[1]['id']); await pg.wait_for_timeout(300); await pg.click('#sDelete'); await pg.wait_for_timeout(300)
+        check(await pg.evaluate('window.__land.S.searches.length') == 0, 'delete saved searches')
+        # details show acres prominently
+        await pg.click('#plist .pi [data-act="info"]'); await pg.wait_for_timeout(200)
+        check('acres' in await pg.inner_text('#inspAcres'), 'details panel shows acres up top')
+        await pg.click('#inspect [data-x]')
+        await pg.check('#lInView'); await pg.click('#fReset'); await pg.wait_for_timeout(400)
         # rule out from list (no confirm)
         first = await pg.get_attribute('#plist .pi', 'data-id')
         await pg.click('#plist .pi .main'); await pg.wait_for_timeout(200)
@@ -84,6 +128,10 @@ async def main():
         check(len(ids) == 2 and ids[-1] == nid, 'mobile: tap on map rules out parcel')
         await mp.locator('#toastUndo').tap(); await mp.wait_for_timeout(300)
         check(await num(mp, '#lcHidden') == 1, 'mobile: toast undo')
+        await mp.locator('#fSize button[data-k="80"]').tap(); await mp.wait_for_timeout(400)
+        mac = [float(t.replace(',', '').replace(' ac', '')) for t in await mp.locator('#plist .pi .acbig').all_inner_texts()]
+        check(await mp.is_visible('#sizeBox') and mac and all(75 <= a <= 85 for a in mac), f'mobile: size chip ~80 visible and filters list ({len(mac)} rows)')
+        await mp.locator('#fSize button[data-k="any"]').tap(); await mp.wait_for_timeout(300)
         sw = await mp.evaluate('document.documentElement.scrollWidth'); check(sw <= 412, f'mobile no horizontal overflow ({sw})')
         await mp.evaluate('window.scrollTo(0,0)'); await mp.locator('#lbRestore').tap(); await mp.wait_for_timeout(300)
         await mp.evaluate("document.querySelector('#filtersBox').open = false; window.__land.map.setView([46.30, -96.66], 12)"); await mp.wait_for_timeout(2500)

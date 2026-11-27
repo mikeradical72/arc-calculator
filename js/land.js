@@ -1,4 +1,4 @@
-import { matches, freshFilters, Hidden, SORTS, activeFilterCount, perAcre } from './landcore.js';
+import { matches, freshFilters, Hidden, SORTS, activeFilterCount, perAcre, ACRE_PRESETS, presetFor, applyPreset, acreLabel, saveSearch, loadSearch, deleteSearch, sameFilters } from './landcore.js';
 
 const KEY = 'baseacre:land:v1';
 const $ = (s, el = document) => el.querySelector(s);
@@ -11,7 +11,8 @@ function loadState() {
   let s = {};
   try { s = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
   return { filters: { ...freshFilters(), ...(s.filters || {}) }, hidden: s.hidden || [], mode: s.mode || 'out', color: s.color || 'nccpi',
-    base: s.base || 'sat', showHidden: !!s.showHidden, inView: s.inView !== false, sort: s.sort || 'nccpi', view: s.view || null };
+    base: s.base || 'sat', showHidden: !!s.showHidden, inView: s.inView !== false, sort: s.sort || 'nccpi', view: s.view || null,
+    searches: Array.isArray(s.searches) ? s.searches : [], active: s.active || '' };
 }
 const S = loadState();
 const hidden = new Hidden(S.hidden);
@@ -118,7 +119,7 @@ function renderCounts() {
   const matchingHidden = P.filter((p) => hidden.has(p.id) && matches(p, S.filters)).length;
   $('#lcShown').textContent = shown.toLocaleString('en-US');
   const total = P.length;
-  $('#lcOf').textContent = `of ${total.toLocaleString('en-US')}` + (activeFilterCount(S.filters) ? ' · filtered' : '') + (matchingHidden ? ` · ${matchingHidden.toLocaleString('en-US')} ruled out here` : '');
+  $('#lcOf').textContent = `of ${total.toLocaleString('en-US')}` + (S.filters.acMin !== '' || S.filters.acMax !== '' ? ` · ${acreLabel(S.filters)}` : '') + (activeFilterCount(S.filters) ? ' · filtered' : '') + (matchingHidden ? ` · ${matchingHidden.toLocaleString('en-US')} ruled out here` : '');
   $('#lcHidden').textContent = hidden.size.toLocaleString('en-US');
   $('#lbUndo').disabled = !hidden.size; $('#lbRestore').disabled = !hidden.size;
   const n = activeFilterCount(S.filters); $('#fCount').textContent = n ? n : '';
@@ -159,6 +160,7 @@ function toast(id) {
   t.hidden = false; clearTimeout(toastT); toastT = setTimeout(hideToast, 4000);
   $('#toastUndo').onclick = (e) => { e.stopPropagation(); undo(); };
 }
+function toastMsg(m) { const t = $('#toast'); t.innerHTML = `<span>${esc(m)}</span>`; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(hideToast, 2500); }
 function hideToast() { $('#toast').hidden = true; }
 function flash(id) {
   const l = LAYERS.get(id); if (!l) return;
@@ -193,7 +195,7 @@ function liHtml(p) {
   const r = hidden.has(p.id);
   const pa = perAcre(p);
   return `<li class="pi${r ? ' ruled' : ''}" data-id="${esc(p.id)}"><span class="sw" style="background:${colorOf(p)}"></span>
-    <div class="main"><div class="t">${p.ac.toLocaleString('en-US')} ac <small>${esc(p.twp || '')} · ${esc(p.co)} Co.</small></div>
+    <div class="main"><div class="t"><span class="acbig">${p.ac.toLocaleString('en-US')} ac</span> <small>${esc(p.twp || '')} · ${esc(p.co)} Co.</small></div>
     <div class="o">${esc(p.own || 'Owner not listed')}${p.otype && p.otype !== 'Individual' ? ` · ${esc(p.otype)}` : ''}${p.absentee ? ' · out of state' : ''}</div>
     <div class="m"><span>NCCPI ${p.nccpi ?? '—'}</span><span>Crop ${p.crop ?? '—'}%</span><span>Class I–II ${p.lcc12 ?? '—'}%</span>${p.c25 ? `<span>2025 ${esc(p.c25)}</span>` : ''}${isFinite(pa) ? `<span>${fmt$(pa)}/ac ${p.co === 'Wilkin' ? 'EMV' : 'roll'}</span>` : ''}</div></div>
     <div class="acts"><button type="button" data-act="zoom" title="Zoom to parcel" aria-label="Zoom to parcel"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2"/></svg></button><button type="button" data-act="info" title="Details" aria-label="Details">i</button></div></li>`;
@@ -205,7 +207,8 @@ function showInspect(id) {
   const pa = perAcre(p);
   const row = (k, v, src) => v == null || v === '' ? '' : `<dt>${k}</dt><dd>${v}${src ? ` <small>${src}</small>` : ''}</dd>`;
   box.dataset.id = id;
-  box.innerHTML = `<h4><span>${p.ac} ac · ${esc(p.twp || '')}, ${esc(p.co)} Co.</span><button class="btn icon ghost" type="button" data-x>Close</button></h4><dl>
+  box.innerHTML = `<h4><span>${esc(p.twp || '')}, ${esc(p.co)} Co.</span><button class="btn icon ghost" type="button" data-x>Close</button></h4>
+    <div class="acres-hero" id="inspAcres">${p.ac.toLocaleString('en-US')} acres<small>GIS${p.dac != null ? ` · ${p.dac.toLocaleString('en-US')} deeded` : ''}</small></div><dl>
     ${row('Owner', esc(p.own || 'Not listed'), p.co === 'Wilkin' ? 'tax name, MnGeo' : 'tax roll, NDGISHub')}
     ${row('Owner type', esc(p.otype), 'guessed from name')}
     ${row('Owner mail state', esc(p.ost), p.absentee ? 'outside MN/ND' : '')}
@@ -246,7 +249,7 @@ function checkGroup(el, groups, key, countEl) {
 const count = (arr, fn) => { const m = new Map(); arr.forEach((p) => { const k = fn(p); m.set(k, (m.get(k) || 0) + 1); }); return m; };
 function buildFilterUI() {
   const f = S.filters;
-  $('#fCounty').value = f.county; $('#fAcMin').value = f.acMin; $('#fAcMax').value = f.acMax;
+  $('#fCounty').value = f.county; renderSize(); renderSaved();
   $('#fNc').value = f.ncMin; $('#fCrop').value = f.cropMin; $('#fLcc').value = f.lccMin; $('#fQ').value = f.q; $('#fAbs').checked = f.absentee;
   $('#fColor').value = S.color; $('#fBase').value = S.base; $('#lSort').value = S.sort; $('#lInView').checked = S.inView; $('#lbShowHidden').checked = S.showHidden;
   sliderLabels();
@@ -256,17 +259,52 @@ function buildFilterUI() {
   checkGroup($('#fTwps'), grp((p) => p.twp || '', (k) => k || '(no township)'), 'twps', $('#fTwpCount'));
   checkGroup($('#fClasses'), grp((p) => p.cls, (k) => k), 'classes', $('#fClsCount'));
 }
+/* ---------- parcel size + saved searches ---------- */
+function renderSize() {
+  const f = S.filters, k = presetFor(f);
+  $('#fSize').innerHTML = ACRE_PRESETS.map((p) => `<button type="button" data-k="${p.key}" class="${p.key === k ? 'on' : ''}" aria-pressed="${p.key === k}">${p.label}${p.sub ? `<small>${p.sub}</small>` : '<small>no limit</small>'}</button>`).join('');
+  $('#vSize').textContent = acreLabel(f) + (k === 'custom' ? ' (custom)' : '');
+  $('#fAcMin').value = f.acMin ?? ''; $('#fAcMax').value = f.acMax ?? '';
+}
+function renderSaved() {
+  const sel = $('#sSelect');
+  sel.innerHTML = `<option value="">${S.searches.length ? 'Saved searches (' + S.searches.length + ')…' : 'No saved searches yet'}</option>` +
+    S.searches.map((x) => `<option value="${esc(x.id)}">${esc(x.name)} · ${esc(acreLabel(x.filters))}</option>`).join('');
+  const a = S.searches.find((x) => x.id === S.active);
+  if (!a) S.active = '';
+  sel.value = S.active;
+  $('#sActive').hidden = !a;
+  if (a) {
+    const dirty = !sameFilters(a.filters, S.filters);
+    $('#sActiveLabel').innerHTML = `Using <b>${esc(a.name)}</b>${dirty ? ' · edited' : ''}`;
+    $('#sUpdate').hidden = !dirty;
+  }
+}
 function sliderLabels() {
   const f = S.filters;
   $('#vNc').textContent = f.ncMin > 0 ? f.ncMin : 'any'; $('#vCrop').textContent = f.cropMin > 0 ? f.cropMin + '%' : 'any'; $('#vLcc').textContent = f.lccMin > 0 ? f.lccMin + '%' : 'any';
 }
 let chT;
-function changed(now = false) { save(); clearTimeout(chT); chT = setTimeout(redraw, now ? 0 : 120); }
+function changed(now = false) { renderSaved(); save(); clearTimeout(chT); chT = setTimeout(redraw, now ? 0 : 120); }
 function wire() {
   const f = S.filters;
   $('#fCounty').onchange = (e) => { f.county = e.target.value; changed(true); if (f.county !== 'all') { const cs = COUNTY_BOUNDS[f.county]; map.fitBounds(cs); } };
-  $('#fAcMin').oninput = (e) => { f.acMin = e.target.value; changed(); };
-  $('#fAcMax').oninput = (e) => { f.acMax = e.target.value; changed(); };
+  const sizeTxt = () => { const k = presetFor(f); $('#vSize').textContent = acreLabel(f) + (k === 'custom' ? ' (custom)' : ''); document.querySelectorAll('#fSize button').forEach((b) => { b.classList.toggle('on', b.dataset.k === k); b.setAttribute('aria-pressed', b.dataset.k === k); }); };
+  $('#fAcMin').oninput = (e) => { f.acMin = e.target.value; sizeTxt(); changed(); };
+  $('#fAcMax').oninput = (e) => { f.acMax = e.target.value; sizeTxt(); changed(); };
+  $('#fSize').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; applyPreset(f, b.dataset.k); renderSize(); changed(true); };
+  $('#sSave').onclick = () => {
+    const name = (prompt('Name this search (keeps its own parcel size and filters):', `${acreLabel(f)}${f.county !== 'all' ? ' · ' + f.county[0].toUpperCase() + f.county.slice(1) : ''}`) || '').trim();
+    if (!name) return; const s = saveSearch(S.searches, name, f); S.active = s.id; renderSaved(); save(); toastMsg(`Saved “${name}”`);
+  };
+  $('#sSelect').onchange = (e) => {
+    const id = e.target.value; if (!id) { S.active = ''; renderSaved(); save(); return; }
+    const nf = loadSearch(S.searches, id); if (!nf) return;
+    for (const k of Object.keys(f)) delete f[k]; Object.assign(f, freshFilters(), nf);
+    S.active = id; buildFilterUI(); changed(true);
+  };
+  $('#sUpdate').onclick = () => { saveSearch(S.searches, null, f, S.active); renderSaved(); save(); toastMsg('Search updated'); };
+  $('#sDelete').onclick = () => { const a = S.searches.find((x) => x.id === S.active); if (!a || !confirm(`Delete saved search “${a.name}”? Your current filters stay as they are.`)) return; deleteSearch(S.searches, a.id); S.active = ''; renderSaved(); save(); };
   $('#fNc').oninput = (e) => { f.ncMin = +e.target.value; sliderLabels(); changed(); };
   $('#fCrop').oninput = (e) => { f.cropMin = +e.target.value; sliderLabels(); changed(); };
   $('#fLcc').oninput = (e) => { f.lccMin = +e.target.value; sliderLabels(); changed(); };

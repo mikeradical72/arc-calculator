@@ -58,3 +58,42 @@ export const SORTS = {
   valac: (a, b) => perAcre(a) - perAcre(b),
 };
 export function perAcre(p) { return p.lval && p.ac ? p.lval / p.ac : Infinity; }
+
+// Parcel-size quick presets (inclusive GIS-acre ranges). max '' = no upper limit.
+export const ACRE_PRESETS = [
+  { key: 'any', label: 'Any size', min: '', max: '' },
+  { key: '40', label: '~40 ac', sub: '35–45', min: 35, max: 45 },
+  { key: '80', label: '~80 ac', sub: '75–85', min: 75, max: 85 },
+  { key: '160', label: '~160 ac', sub: '150–170', min: 150, max: 170 },
+  { key: '320', label: '320+ ac', sub: '300 and up', min: 300, max: '' },
+];
+const same = (a, b) => String(a ?? '') === String(b ?? '');
+export function presetFor(f) {
+  const p = ACRE_PRESETS.find((x) => same(x.min, f.acMin) && same(x.max, f.acMax));
+  return p ? p.key : 'custom';
+}
+export function applyPreset(f, key) {
+  const p = ACRE_PRESETS.find((x) => x.key === key); if (!p) return f;
+  f.acMin = p.min; f.acMax = p.max; return f;
+}
+export function acreLabel(f) {
+  const mn = f.acMin === '' || f.acMin == null ? null : +f.acMin, mx = f.acMax === '' || f.acMax == null ? null : +f.acMax;
+  if (mn == null && mx == null) return 'any size';
+  if (mx == null) return `${mn}+ ac`;
+  if (mn == null) return `up to ${mx} ac`;
+  return `${mn}–${mx} ac`;
+}
+
+// Saved searches: each keeps its own full copy of the filters (including parcel size).
+export function saveSearch(list, name, filters, id) {
+  const copy = JSON.parse(JSON.stringify(filters));
+  if (id) { const s = list.find((x) => x.id === id); if (s) { s.filters = copy; if (name) s.name = name; return s; } }
+  const s = { id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: name || 'Search ' + (list.length + 1), filters: copy };
+  list.push(s); return s;
+}
+export function loadSearch(list, id) {
+  const s = list.find((x) => x.id === id);
+  return s ? JSON.parse(JSON.stringify(s.filters)) : null;
+}
+export function deleteSearch(list, id) { const i = list.findIndex((x) => x.id === id); if (i >= 0) list.splice(i, 1); return i >= 0; }
+export function sameFilters(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
