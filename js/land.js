@@ -1,24 +1,30 @@
-import { matches, freshFilters, Hidden, SORTS, activeFilterCount, perAcre, ACRE_PRESETS, presetFor, applyPreset, acreLabel, saveSearch, loadSearch, deleteSearch, sameFilters } from './landcore.js';
+import { matches, freshFilters, Hidden, SORTS, activeFilterCount, perAcre, ACRE_PRESETS, presetFor, applyPreset, acreLabel, statesOf, OUTSIDE, stateCounts, newSearch, uniqueName, duplicateSearch, removeSearch, migrateStore, exportSearch, importSearch } from './landcore.js';
 
-const KEY = 'baseacre:land:v1';
+const KEY = 'baseacre:land:v1';   // same key; contents migrate to v2 (separate searches) on first load
 const $ = (s, el = document) => el.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt$ = (x) => x == null ? '—' : '$' + Math.round(x).toLocaleString('en-US');
 const PAGE = 60;
 
-/* ---------- state ---------- */
-function loadState() {
-  let s = {};
-  try { s = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) {}
-  return { filters: { ...freshFilters(), ...(s.filters || {}) }, hidden: s.hidden || [], mode: s.mode || 'out', color: s.color || 'nccpi',
-    base: s.base || 'sat', showHidden: !!s.showHidden, inView: s.inView !== false, sort: s.sort || 'nccpi', view: s.view || null,
-    searches: Array.isArray(s.searches) ? s.searches : [], active: s.active || '' };
+/* ---------- state ----------
+   STORE.searches = separate searches (tabs). Each has its own filters, ruled-out list, sort and map view.
+   S.filters / hidden / S.sort / S.view are the live copies of the active search; syncOut() writes them back. */
+function readRaw() { try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; } }
+const STORE = migrateStore(readRaw());
+let A = STORE.searches.find((x) => x.id === STORE.active);
+const S = { mode: STORE.mode, color: STORE.color, base: STORE.base, showHidden: STORE.showHidden, inView: STORE.inView,
+  filters: JSON.parse(JSON.stringify(A.filters)), sort: A.sort, view: A.view };
+const hidden = new Hidden(A.hidden);
+function syncOut() { A.filters = JSON.parse(JSON.stringify(S.filters)); A.hidden = hidden.toJSON().slice(); A.sort = S.sort; A.view = S.view; }
+function persist() {
+  syncOut();
+  const out = { v: 2, searches: STORE.searches, active: A.id, mode: S.mode, color: S.color, base: S.base, showHidden: S.showHidden, inView: S.inView };
+  try { localStorage.setItem(KEY, JSON.stringify(out)); } catch (e) {}
 }
-const S = loadState();
-const hidden = new Hidden(S.hidden);
 let saveT;
-function save() { clearTimeout(saveT); saveT = setTimeout(() => { S.hidden = hidden.toJSON(); try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }, 200); }
-window.__land = { S, hidden };
+function save() { clearTimeout(saveT); saveT = setTimeout(() => { persist(); renderTabs(); }, 200); }
+persist();   // write the migrated (v2) form right away
+window.__land = { S, hidden, STORE, get active() { return A; } };
 
 /* ---------- tabs ---------- */
 let map, ready = false;
@@ -99,7 +105,7 @@ function styleFor(f) {
   return { color: sat ? '#ffffff' : '#334', weight: map && map.getZoom() >= 13 ? 1.2 : 0.6, opacity: sat ? 0.85 : 0.6, fillColor: colorOf(p), fillOpacity: sat ? 0.45 : 0.55 };
 }
 function tipHtml(p) {
-  return `<b>${p.ac} ac · ${esc(p.twp || p.co)}</b><br>${esc(p.own || 'Owner not listed')}<br>NCCPI ${p.nccpi ?? '—'} · cropland ${p.crop ?? '—'}% · ${esc(p.c25 || 'no main crop')}<br><span style="color:#b8432f">${S.mode === 'out' ? (hidden.has(p.id) ? 'Click to restore' : 'Click to rule out') : 'Click for details'}</span>`;
+  return `<b>${p.ac} ac · ${esc(p.twp || p.co)}</b><br>${esc(whoLine(p))}<br>NCCPI ${p.nccpi ?? '—'} · cropland ${p.crop ?? '—'}% · ${esc(p.c25 || 'no main crop')}<br><span style="color:#b8432f">${S.mode === 'out' ? (hidden.has(p.id) ? 'Click to restore' : 'Click to rule out') : 'Click for details'}</span>`;
 }
 
 /* ---------- filtering + drawing ---------- */
@@ -196,9 +202,27 @@ function liHtml(p) {
   const pa = perAcre(p);
   return `<li class="pi${r ? ' ruled' : ''}" data-id="${esc(p.id)}"><span class="sw" style="background:${colorOf(p)}"></span>
     <div class="main"><div class="t"><span class="acbig">${p.ac.toLocaleString('en-US')} ac</span> <small>${esc(p.twp || '')} · ${esc(p.co)} Co.</small></div>
-    <div class="o">${esc(p.own || 'Owner not listed')}${p.otype && p.otype !== 'Individual' ? ` · ${esc(p.otype)}` : ''}${p.absentee ? ' · out of state' : ''}</div>
+    <div class="o">${nameHtml(p)}${p.otype && p.otype !== 'Individual' ? ` <span class="ot">· ${esc(p.otype)}</span>` : ''}</div>
     <div class="m"><span>NCCPI ${p.nccpi ?? '—'}</span><span>Crop ${p.crop ?? '—'}%</span><span>Class I–II ${p.lcc12 ?? '—'}%</span>${p.c25 ? `<span>2025 ${esc(p.c25)}</span>` : ''}${isFinite(pa) ? `<span>${fmt$(pa)}/ac ${p.co === 'Wilkin' ? 'EMV' : 'roll'}</span>` : ''}</div></div>
     <div class="acts"><button type="button" data-act="zoom" title="Zoom to parcel" aria-label="Zoom to parcel"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2"/></svg></button><button type="button" data-act="info" title="Details" aria-label="Details">i</button></div></li>`;
+}
+
+function whoLine(p) {
+  if (p.own && p.tp && p.own !== p.tp) return `Owner ${p.own} · Taxpayer ${p.tp}`;
+  if (p.tp && !p.own) return `Taxpayer ${p.tp}`;
+  return p.own || p.tp || 'Owner not listed';
+}
+function hl(txt) {
+  const q = (S.filters.name || '').trim(); const e = esc(txt); if (!q) return e;
+  const i = txt.toLowerCase().indexOf(q.toLowerCase()); if (i < 0) return e;
+  return esc(txt.slice(0, i)) + '<mark>' + esc(txt.slice(i, i + q.length)) + '</mark>' + esc(txt.slice(i + q.length));
+}
+function nameHtml(p) {
+  const st = (x) => x ? ` <span class="st">${esc(x)}</span>` : '';
+  const parts = [];
+  if (p.own) parts.push(`<span class="lbl">Owner</span> ${hl(p.own)}${st(p.ost)}`);
+  if (p.tp) parts.push(`<span class="lbl">Taxpayer</span> ${hl(p.tp)}${st(p.tst)}`);
+  return parts.join('<br>') || 'Owner not listed';
 }
 
 /* ---------- inspect ---------- */
@@ -209,9 +233,11 @@ function showInspect(id) {
   box.dataset.id = id;
   box.innerHTML = `<h4><span>${esc(p.twp || '')}, ${esc(p.co)} Co.</span><button class="btn icon ghost" type="button" data-x>Close</button></h4>
     <div class="acres-hero" id="inspAcres">${p.ac.toLocaleString('en-US')} acres<small>GIS${p.dac != null ? ` · ${p.dac.toLocaleString('en-US')} deeded` : ''}</small></div><dl>
-    ${row('Owner', esc(p.own || 'Not listed'), p.co === 'Wilkin' ? 'tax name, MnGeo' : 'tax roll, NDGISHub')}
+    ${row('Owner', esc(p.own || (p.co === 'Wilkin' ? 'Not published (taxpayer only)' : 'Not listed')), p.co === 'Wilkin' ? 'owner_name, MnGeo' : 'tax roll owner/mailing name, NDGISHub')}
+    ${row('Owner mail state', esc(p.ost || (p.own ? 'Unknown' : '')), p.co === 'Richland' ? 'tax roll' : 'owner address')}
+    ${p.co === 'Wilkin' ? row('Taxpayer', esc(p.tp || 'Not listed'), 'tax_name, MnGeo') + row('Taxpayer mail state', esc(p.tst || 'Unknown'), 'tax address') : row('Taxpayer', 'Not published separately', 'ND roll lists one owner/mailing name')}
     ${row('Owner type', esc(p.otype), 'guessed from name')}
-    ${row('Owner mail state', esc(p.ost), p.absentee ? 'outside MN/ND' : '')}
+    ${row('Mailing states', esc(statesOf(p).join(', ')), p.absentee ? 'outside MN/ND' : '')}
     ${row('Parcel ID', esc(p.pin))}
     ${row('Legal', esc(p.legal))}
     ${row('Sec-Twp-Rng', esc(p.str))}
@@ -249,9 +275,9 @@ function checkGroup(el, groups, key, countEl) {
 const count = (arr, fn) => { const m = new Map(); arr.forEach((p) => { const k = fn(p); m.set(k, (m.get(k) || 0) + 1); }); return m; };
 function buildFilterUI() {
   const f = S.filters;
-  $('#fCounty').value = f.county; renderSize(); renderSaved();
-  $('#fNc').value = f.ncMin; $('#fCrop').value = f.cropMin; $('#fLcc').value = f.lccMin; $('#fQ').value = f.q; $('#fAbs').checked = f.absentee;
-  $('#fColor').value = S.color; $('#fBase').value = S.base; $('#lSort').value = S.sort; $('#lInView').checked = S.inView; $('#lbShowHidden').checked = S.showHidden;
+  $('#fCounty').value = f.county; renderSize();
+  $('#fNc').value = f.ncMin; $('#fCrop').value = f.cropMin; $('#fLcc').value = f.lccMin; $('#fQ').value = f.q; $('#fName').value = f.name || ''; renderStates();
+  $('#fColor').value = S.color; $('#fBase').value = S.base; $('#lSort').value = S.sort || 'nccpi'; $('#lInView').checked = S.inView; $('#lbShowHidden').checked = S.showHidden;
   sliderLabels();
   const ot = count(P, (p) => p.otype); chipGroup($('#fOtype'), [...ot].sort((a, b) => b[1] - a[1]).map(([k, n]) => [k, k, n]), 'otypes');
   const cr = count(P, (p) => p.c25 || 'None'); chipGroup($('#fCrops'), [...cr].sort((a, b) => b[1] - a[1]).filter(([, n]) => n >= 10).map(([k, n]) => [k, k === 'None' ? 'No main crop' : k, n]), 'crops');
@@ -266,26 +292,68 @@ function renderSize() {
   $('#vSize').textContent = acreLabel(f) + (k === 'custom' ? ' (custom)' : '');
   $('#fAcMin').value = f.acMin ?? ''; $('#fAcMax').value = f.acMax ?? '';
 }
-function renderSaved() {
-  const sel = $('#sSelect');
-  sel.innerHTML = `<option value="">${S.searches.length ? 'Saved searches (' + S.searches.length + ')…' : 'No saved searches yet'}</option>` +
-    S.searches.map((x) => `<option value="${esc(x.id)}">${esc(x.name)} · ${esc(acreLabel(x.filters))}</option>`).join('');
-  const a = S.searches.find((x) => x.id === S.active);
-  if (!a) S.active = '';
-  sel.value = S.active;
-  $('#sActive').hidden = !a;
-  if (a) {
-    const dirty = !sameFilters(a.filters, S.filters);
-    $('#sActiveLabel').innerHTML = `Using <b>${esc(a.name)}</b>${dirty ? ' · edited' : ''}`;
-    $('#sUpdate').hidden = !dirty;
+/* ---------- search tabs ---------- */
+function renderTabs() {
+  $('#stabList').innerHTML = STORE.searches.map((x) => {
+    const on = x.id === A.id; const n = on ? hidden.size : x.hidden.length;
+    return `<button type="button" role="tab" class="stab${on ? ' on' : ''}" aria-selected="${on}" data-id="${esc(x.id)}" title="${esc(x.name)}"><span class="nm">${esc(x.name)}</span>${n ? `<span class="hn" title="ruled out">${n.toLocaleString('en-US')}</span>` : ''}</button>`;
+  }).join('');
+  const t = $('#stabList .stab.on'); if (t) t.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+function switchTo(id) {
+  if (id === A.id) return;
+  const next = STORE.searches.find((x) => x.id === id); if (!next) return;
+  clearTimeout(saveT); syncOut();
+  A = next; loadActive();
+}
+function loadActive() {
+  for (const k of Object.keys(S.filters)) delete S.filters[k];
+  Object.assign(S.filters, JSON.parse(JSON.stringify(A.filters)));
+  hidden.reset(A.hidden); S.sort = A.sort;
+  $('#inspect').hidden = true; hideToast();
+  buildFilterUI();
+  if (A.view) { S.view = A.view; map.setView(A.view.c, A.view.z, { animate: false }); } else S.view = A.view = { c: [map.getCenter().lat, map.getCenter().lng], z: map.getZoom() };
+  redraw(); persist(); renderTabs();
+}
+function addSearch(s) { STORE.searches.push(s); switchTo(s.id); }
+function searchMenu(m) {
+  if (m === 'rename') {
+    const n = (prompt('Rename this search:', A.name) || '').trim(); if (!n || n === A.name) return;
+    A.name = uniqueName(STORE.searches.filter((x) => x !== A), n.slice(0, 60)); persist(); renderTabs();
+  } else if (m === 'dup') {
+    syncOut(); const d = duplicateSearch(STORE.searches, A.id); switchTo(d.id); toastMsg(`Duplicated as “${d.name}”`);
+  } else if (m === 'export') {
+    syncOut();
+    const blob = new Blob([JSON.stringify(exportSearch(A), null, 1)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'baseacre-search-' + A.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() + '.json';
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  } else if (m === 'import') {
+    $('#sImportFile').value = ''; $('#sImportFile').click();
+  } else if (m === 'delete') {
+    if (!confirm(`Delete the search “${A.name}” and its ${hidden.size} ruled-out parcels? Other searches aren't affected.`)) return;
+    clearTimeout(saveT);
+    const nextId = removeSearch(STORE.searches, A.id);
+    A = STORE.searches.find((x) => x.id === nextId); loadActive();
   }
+}
+/* ---------- mailing states ---------- */
+let STATE_COUNTS = [], stMore = false;
+function renderStates() {
+  const f = S.filters; const sel = new Set(f.states || []);
+  const out = P.filter((p) => p.absentee === true).length;
+  const top = stMore ? STATE_COUNTS : STATE_COUNTS.filter(([k], i) => i < 8 || sel.has(k));
+  $('#fStates').innerHTML = `<button type="button" data-v="__out" class="out${f.absentee ? ' on' : ''}" aria-pressed="${!!f.absentee}">Outside MN/ND <small>${out.toLocaleString('en-US')}</small></button>` +
+    top.map(([k, n]) => `<button type="button" data-v="${esc(k)}" class="${sel.has(k) ? 'on' : ''}" aria-pressed="${sel.has(k)}">${esc(k)} <small>${n.toLocaleString('en-US')}</small></button>`).join('');
+  $('#fStMore').textContent = stMore ? 'Fewer states' : `All ${STATE_COUNTS.length} states…`;
+  $('#fStCount').textContent = (sel.size + (f.absentee ? 1 : 0)) || '';
 }
 function sliderLabels() {
   const f = S.filters;
   $('#vNc').textContent = f.ncMin > 0 ? f.ncMin : 'any'; $('#vCrop').textContent = f.cropMin > 0 ? f.cropMin + '%' : 'any'; $('#vLcc').textContent = f.lccMin > 0 ? f.lccMin + '%' : 'any';
 }
 let chT;
-function changed(now = false) { renderSaved(); save(); clearTimeout(chT); chT = setTimeout(redraw, now ? 0 : 120); }
+function changed(now = false) { save(); clearTimeout(chT); chT = setTimeout(redraw, now ? 0 : 120); }
 function wire() {
   const f = S.filters;
   $('#fCounty').onchange = (e) => { f.county = e.target.value; changed(true); if (f.county !== 'all') { const cs = COUNTY_BOUNDS[f.county]; map.fitBounds(cs); } };
@@ -293,23 +361,34 @@ function wire() {
   $('#fAcMin').oninput = (e) => { f.acMin = e.target.value; sizeTxt(); changed(); };
   $('#fAcMax').oninput = (e) => { f.acMax = e.target.value; sizeTxt(); changed(); };
   $('#fSize').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; applyPreset(f, b.dataset.k); renderSize(); changed(true); };
-  $('#sSave').onclick = () => {
-    const name = (prompt('Name this search (keeps its own parcel size and filters):', `${acreLabel(f)}${f.county !== 'all' ? ' · ' + f.county[0].toUpperCase() + f.county.slice(1) : ''}`) || '').trim();
-    if (!name) return; const s = saveSearch(S.searches, name, f); S.active = s.id; renderSaved(); save(); toastMsg(`Saved “${name}”`);
+  $('#stabList').onclick = (e) => { const b = e.target.closest('.stab'); if (b) switchTo(b.dataset.id); };
+  $('#sNew').onclick = () => {
+    const n = (prompt('Name the new search:', uniqueName(STORE.searches, 'Search ' + (STORE.searches.length + 1))) || '').trim(); if (!n) return;
+    syncOut(); const v = { c: [map.getCenter().lat, map.getCenter().lng], z: map.getZoom() };
+    addSearch(newSearch(uniqueName(STORE.searches, n), { view: v })); toastMsg(`New search “${A.name}” — fresh filters, nothing ruled out`);
   };
-  $('#sSelect').onchange = (e) => {
-    const id = e.target.value; if (!id) { S.active = ''; renderSaved(); save(); return; }
-    const nf = loadSearch(S.searches, id); if (!nf) return;
-    for (const k of Object.keys(f)) delete f[k]; Object.assign(f, freshFilters(), nf);
-    S.active = id; buildFilterUI(); changed(true);
+  const menu = $('#sMenu'), mb = $('#sMenuBtn');
+  const closeMenu = () => { menu.hidden = true; mb.setAttribute('aria-expanded', 'false'); };
+  mb.onclick = (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; mb.setAttribute('aria-expanded', String(!menu.hidden)); };
+  menu.onclick = (e) => { const b = e.target.closest('[data-m]'); if (!b) return; closeMenu(); searchMenu(b.dataset.m); };
+  document.addEventListener('click', (e) => { if (!menu.hidden && !e.target.closest('.smenu-wrap')) closeMenu(); });
+  $('#sImportFile').onchange = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    try { const txt = await file.text(); syncOut(); const s2 = importSearch(STORE.searches, txt); STORE.searches.pop(); addSearch(s2); toastMsg(`Imported “${s2.name}” (${s2.hidden.length} ruled out)`); }
+    catch (err) { alert('Could not import that file: ' + err.message); }
   };
-  $('#sUpdate').onclick = () => { saveSearch(S.searches, null, f, S.active); renderSaved(); save(); toastMsg('Search updated'); };
-  $('#sDelete').onclick = () => { const a = S.searches.find((x) => x.id === S.active); if (!a || !confirm(`Delete saved search “${a.name}”? Your current filters stay as they are.`)) return; deleteSearch(S.searches, a.id); S.active = ''; renderSaved(); save(); };
+  $('#fName').oninput = (e) => { f.name = e.target.value; changed(); };
+  $('#fStates').onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return; const v = b.dataset.v;
+    if (v === '__out') f.absentee = !f.absentee;
+    else { f.states = f.states || []; const i = f.states.indexOf(v); if (i >= 0) f.states.splice(i, 1); else f.states.push(v); }
+    renderStates(); changed(true);
+  };
+  $('#fStMore').onclick = () => { stMore = !stMore; renderStates(); };
   $('#fNc').oninput = (e) => { f.ncMin = +e.target.value; sliderLabels(); changed(); };
   $('#fCrop').oninput = (e) => { f.cropMin = +e.target.value; sliderLabels(); changed(); };
   $('#fLcc').oninput = (e) => { f.lccMin = +e.target.value; sliderLabels(); changed(); };
   $('#fQ').oninput = (e) => { f.q = e.target.value.trim(); changed(); };
-  $('#fAbs').onchange = (e) => { f.absentee = e.target.checked; changed(true); };
   $('#fColor').onchange = (e) => { S.color = e.target.value; save(); redraw(); };
   $('#fBase').onchange = (e) => { S.base = e.target.value; setBase(S.base); save(); parcelLayer.setStyle(styleFor); };
   $('#fReset').onclick = () => { Object.assign(S.filters, freshFilters()); buildFilterUI(); changed(true); };
@@ -338,13 +417,13 @@ function wire() {
 /* ---------- sources ---------- */
 function renderSources(meta) {
   $('#landSourcesBody').innerHTML = `<ul>
-  <li><b>Wilkin County parcels:</b> <a href="https://gisdata.mn.gov/dataset/plan-parcels-open" target="_blank" rel="noopener">MnGeo, Parcels Compiled from Opt-In Open Data Counties</a> (Wilkin is one of the counties that opted in). Owner (tax name), mailing address, GIS and deeded acres, estimated market value (EMV), and use class where the county lists one.</li>
-  <li><b>Richland County parcels:</b> <a href="https://north-dakota-state-parcel-program-ndgov.hub.arcgis.com/" target="_blank" rel="noopener">North Dakota Statewide Parcel Program (NDGISHub Parcels + Tax Roll)</a>, joined on the GIS ID. Owner, mailing state, primary use, ag land value and total value as listed on the county tax roll.</li>
+  <li><b>Wilkin County parcels:</b> <a href="https://gisdata.mn.gov/dataset/plan-parcels-open" target="_blank" rel="noopener">MnGeo, Parcels Compiled from Opt-In Open Data Counties</a> (Wilkin is one of the counties that opted in). Owner name (<code>owner_name</code>) and taxpayer name (<code>tax_name</code>) as separate fields, each with its own mailing address, plus GIS and deeded acres, estimated market value (EMV), and use class where the county lists one.</li>
+  <li><b>Richland County parcels:</b> <a href="https://north-dakota-state-parcel-program-ndgov.hub.arcgis.com/" target="_blank" rel="noopener">North Dakota Statewide Parcel Program (NDGISHub Parcels + Tax Roll)</a>, joined on the GIS ID. Owner/mailing name and the owner's mailing state, primary use, ag land value and total value as listed on the county tax roll.</li>
   <li><b>Soil productivity:</b> <a href="https://sdmdataaccess.nrcs.usda.gov/" target="_blank" rel="noopener">USDA NRCS SSURGO via Soil Data Access</a> (survey areas MN167, ND077). NCCPI v3 is averaged across each map unit's components, then weighted by area across the parcel and shown ×100. "Class I–II soils" is the share of the parcel whose dominant non-irrigated land capability class is 1 or 2.</li>
   <li><b>Cropland share and main crop:</b> <a href="https://nassgeodata.gmu.edu/CropScape/" target="_blank" rel="noopener">USDA NASS Cropland Data Layer 2025</a> (30 m). Cropland counts CDL crop classes 1–61, except other hay (37), sod/grass seed (59) and switchgrass (60), plus classes 66–77 and 204–254. Main crop is the most common crop class where cropland is at least 20%.</li>
   <li><b>Townships:</b> <a href="https://tigerweb.geo.census.gov/" target="_blank" rel="noopener">US Census TIGERweb county subdivisions</a>, assigned at each parcel's interior point.</li>
-  <li><b>Worked out here:</b> owner type is guessed from keywords in the owner name (LLC, Trust, County…) and can be wrong. "Outside MN/ND" comes from the owner's mailing address.</li></ul>
-  <p><b>Gaps:</b> only parcels of ${meta.minAcres}+ GIS acres are included (${meta.counties.wilkin.count.toLocaleString()} in Wilkin, ${meta.counties.richland.count.toLocaleString()} in Richland). Nothing here says a parcel is for sale or for rent, or who farms it; there are no sale prices. Wilkin lists a use class for only some parcels. Richland doesn't publish deeded acres, so GIS acres are used. Dollar values aren't comparable across the state line: Wilkin shows estimated market value, while Richland shows the values on its tax roll. CDL is a satellite classification and has errors. NCCPI is a national soil index, not a yield. Boundaries are simplified to about 4 m and aren't a survey. Data downloaded ${meta.built}.</p>`;
+  <li><b>Worked out here:</b> owner type is guessed from keywords in the owner name (or the taxpayer name when there's no owner) and can be wrong. Mailing state is read from the "City, ST 12345" line of each Wilkin address. For Richland, the roll's state field is used. When that field isn't a real state code (city names like "St Cloud" or "Mc Lean" spill into it), the state comes from the ZIP code's first three digits (${(meta.stateStats?.nd_state_from_zip ?? 0).toLocaleString()} tax-roll records). "Outside MN/ND" = any owner or taxpayer mailing state other than MN or ND.</li></ul>
+  <p><b>Gaps:</b> only parcels of ${meta.minAcres}+ GIS acres are included (${meta.counties.wilkin.count.toLocaleString()} in Wilkin, ${meta.counties.richland.count.toLocaleString()} in Richland). Nothing here says a parcel is for sale or for rent, or who farms it; there are no sale prices. Wilkin lists a use class for only some parcels. Richland doesn't publish deeded acres, so GIS acres are used. <b>Names and mailing states:</b> Wilkin publishes the taxpayer for almost every parcel but a separate owner name for only about 1 in 9 of them (${P.filter((p) => p.co === 'Wilkin' && p.own).length.toLocaleString()} parcels). For the rest the owner shows as "not published" and only the taxpayer can be searched. About 170 Wilkin addresses are cut off after three lines (care-of lines), so their state is unknown. Richland's roll lists one owner/mailing name per record and no separate taxpayer. When several roll records share one map parcel, all their names are kept. ${(meta.stateStats?.nd_state_unknown ?? 0).toLocaleString()} Richland roll records have no usable state or ZIP (mostly government and drain parcels). Parcels with no mailing state show as "Unknown" (${P.filter((p) => !p.sts).length.toLocaleString()} in total). A mailing address is where the tax bill goes, not where the owner lives. Dollar values aren't comparable across the state line: Wilkin shows estimated market value, while Richland shows the values on its tax roll. CDL is a satellite classification and has errors. NCCPI is a national soil index, not a yield. Boundaries are simplified to about 4 m and aren't a survey. Data downloaded ${meta.built}.</p>`;
 }
 
 /* ---------- boot ---------- */
@@ -356,7 +435,8 @@ async function boot() {
   for (const fc of [w, r]) for (const f of fc.features) { P.push(f.properties); FEAT.set(f.properties.id, f); BBOX.set(f.properties.id, bboxOf(f.geometry)); }
   [['wilkin', cw], ['richland', cr]].forEach(([k, fc]) => { const gl = L.geoJSON(fc, { interactive: false, style: { color: '#ffd54a', weight: 2.5, fill: false, dashArray: '6 4' } }).addTo(map); COUNTY_BOUNDS[k] = gl.getBounds(); });
   renderSources(meta);
-  buildFilterUI(); wire(); redraw();
+  STATE_COUNTS = stateCounts(P);
+  buildFilterUI(); wire(); redraw(); renderTabs();
   if (window.innerWidth < 860 && !localStorage.getItem(KEY + ':seen')) $('#filtersBox').open = false;
   try { localStorage.setItem(KEY + ':seen', '1'); } catch (e) {}
   map.on('zoomend', () => parcelLayer.setStyle(styleFor));

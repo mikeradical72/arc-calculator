@@ -31,6 +31,21 @@
 </header>
 
 <main id="view-land" class="land" hidden>
+  <div class="stabs" id="stabs">
+    <div class="stabs-scroll" id="stabList" role="tablist" aria-label="Searches"></div>
+    <button class="stab-new" id="sNew" type="button" title="New search">+ New</button>
+    <div class="smenu-wrap">
+      <button class="stab-more" id="sMenuBtn" type="button" aria-haspopup="menu" aria-expanded="false" title="Search options">&#8943;</button>
+      <div class="smenu" id="sMenu" role="menu" hidden>
+        <button type="button" role="menuitem" data-m="rename">Rename</button>
+        <button type="button" role="menuitem" data-m="dup">Duplicate</button>
+        <button type="button" role="menuitem" data-m="export">Export as JSON</button>
+        <button type="button" role="menuitem" data-m="import">Import JSON…</button>
+        <button type="button" role="menuitem" data-m="delete" class="danger">Delete</button>
+      </div>
+    </div>
+    <input type="file" id="sImportFile" accept="application/json,.json" hidden>
+  </div>
   <div class="land-bar">
     <div class="lb-counts"><b id="lcShown">–</b> parcels shown <span class="muted" id="lcOf"></span></div>
     <div class="lb-actions">
@@ -49,21 +64,15 @@
       <div class="toast" id="toast" hidden></div>
     </div>
     <aside class="side">
-      <div class="saved" id="savedBox">
-        <div class="saved-row">
-          <select id="sSelect" aria-label="Saved searches"><option value="">Saved searches…</option></select>
-          <button class="btn sm primary" id="sSave" type="button">Save search</button>
-        </div>
-        <div class="saved-row tiny" id="sActive" hidden>
-          <span id="sActiveLabel"></span><span class="grow"></span>
-          <button class="btn icon" id="sUpdate" type="button" hidden>Update</button>
-          <button class="btn icon ghost danger" id="sDelete" type="button">Delete</button>
-        </div>
-      </div>
       <div class="size-box" id="sizeBox">
         <div class="size-head"><span>Parcel size</span><b id="vSize">any size</b></div>
         <div class="size-chips" id="fSize" role="group" aria-label="Parcel size presets"></div>
         <div class="pair size-custom"><label>Min acres<input id="fAcMin" type="number" inputmode="decimal" min="0" placeholder="no min"></label><span>to</span><label>Max acres<input id="fAcMax" type="number" inputmode="decimal" min="0" placeholder="no max"></label></div>
+      </div>
+      <div class="who-box" id="whoBox">
+        <label class="fl"><span>Owner or taxpayer name</span><input id="fName" type="search" placeholder="e.g. Yaggie" autocomplete="off" enterkeyhint="search"></label>
+        <div class="fl"><span>Owner/taxpayer mailing state <b class="badge" id="fStCount"></b></span><div class="chips st-chips" id="fStates"></div>
+          <button class="linkbtn" id="fStMore" type="button"></button></div>
       </div>
       <details class="filters" id="filtersBox" open>
         <summary>Filters <span class="badge" id="fCount"></span></summary>
@@ -72,8 +81,7 @@
           <label class="fl"><span>Soil productivity (NCCPI) at least <b id="vNc">any</b></span><input id="fNc" type="range" min="0" max="75" step="5" value="0"></label>
           <label class="fl"><span>Cropland in 2025 at least <b id="vCrop">any</b></span><input id="fCrop" type="range" min="0" max="100" step="5" value="0"></label>
           <label class="fl"><span>Class I–II soils at least <b id="vLcc">any</b></span><input id="fLcc" type="range" min="0" max="100" step="5" value="0"></label>
-          <label class="fl"><span>Owner name, PIN or legal</span><input id="fQ" type="search" placeholder="e.g. Trust, 11-017, SE1/4" autocomplete="off"></label>
-          <label class="check fl-check"><input type="checkbox" id="fAbs"> Owner mails from outside MN/ND</label>
+          <label class="fl"><span>PIN, legal or township</span><input id="fQ" type="search" placeholder="e.g. 11-017, SE1/4, Trust" autocomplete="off"></label>
           <div class="fl"><span>Owner type</span><div class="chips" id="fOtype"></div></div>
           <div class="fl"><span>2025 main crop (CDL)</span><div class="chips" id="fCrops"></div></div>
           <details class="fl sub"><summary>Township <span class="badge" id="fTwpCount"></span></summary><div class="twps" id="fTwps"></div></details>

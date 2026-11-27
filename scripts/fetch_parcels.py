@@ -30,7 +30,7 @@ def paged(url, where, fields, geom=True, page=1000, fmt='geojson'):
         if not feats or (len(feats) < page and not d.get('exceededTransferLimit')): break
     return out
 
-mn_fields = 'objectid,county_pin,state_pin,ctu_name,owner_name,owner_more,tax_name,tax_add_l1,tax_add_l2,tax_add_l3,homestead,acres_poly,acres_deed,emv_land,emv_bldg,emv_total,tax_year,mkt_year,useclass1,useclass2,useclass3,multi_uses,tax_exempt,green_acre,ag_preserv,sale_date,sale_value,abb_legal,ownership,section,township,range,range_dir,plat_name,edit_date'
+mn_fields = 'objectid,county_pin,state_pin,ctu_name,owner_name,owner_more,own_add_l1,own_add_l2,own_add_l3,own_add_l4,tax_name,tax_add_l1,tax_add_l2,tax_add_l3,tax_add_l4,homestead,acres_poly,acres_deed,emv_land,emv_bldg,emv_total,tax_year,mkt_year,useclass1,useclass2,useclass3,multi_uses,tax_exempt,green_acre,ag_preserv,sale_date,sale_value,abb_legal,ownership,section,township,range,range_dir,plat_name,edit_date'
 mn = paged(MN, "co_name='Wilkin'", mn_fields)
 json.dump({'type': 'FeatureCollection', 'features': mn}, open(f'{RAW}/wilkin_parcels.geojson', 'w'))
 nd = paged(ND + '/0/query', "CountyName='Richland'", 'OBJECTID,GISID,UniqueGISID,Section,Township,Range,TownshipName,CalculatedAcres,Ownership,FeatureType,SourceDate,LastUpdateDate')

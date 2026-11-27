@@ -8,5 +8,10 @@
   "richland": {
    "count": 8595
   }
+ },
+ "stateStats": {
+  "nd_state_ok": 8890,
+  "nd_state_unknown": 333,
+  "nd_state_from_zip": 40
  }
 }

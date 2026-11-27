@@ -30,10 +30,26 @@ def owner_type(name):
     if re.search(r' (LLC|L L C|LLP|LLLP|LP|L P|INC|CORP|CORPORATION|CO|COMPANY|FARMS|FARM|PARTNERSHIP|PTNSHP|HOLDINGS|ENTERPRISES|LTD|BANK|COOP|CO OP|INVESTMENTS|PROPERTIES|LAND|REAL ESTATE|AG|AGRI|RANCH) ', s): return 'Business / farm entity'
     return 'Individual'
 
-def mn_state(a):
-    s = ' '.join(x for x in [a.get('tax_add_l2'), a.get('tax_add_l3'), a.get('tax_add_l1')] if x)
-    m = re.search(r'\b([A-Z]{2})\s+\d{5}', s or '')
-    return m.group(1) if m else None
+STATES = set('AL AK AZ AR CA CO CT DE DC FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY PR VI GU AE AP AA AB BC MB NB NL NS NT NU ON PE QC SK YT'.split())
+# USPS 3-digit ZIP prefix -> state, used only when the roll's state field is missing or not a real state code.
+ZIP3 = [(5,5,'NY'),(6,9,'PR'),(10,27,'MA'),(28,29,'RI'),(30,38,'NH'),(39,49,'ME'),(50,54,'VT'),(55,55,'MA'),(56,59,'VT'),(60,69,'CT'),(70,89,'NJ'),
+  (100,149,'NY'),(150,196,'PA'),(197,199,'DE'),(200,200,'DC'),(201,201,'VA'),(202,205,'DC'),(206,219,'MD'),(220,246,'VA'),(247,268,'WV'),(270,289,'NC'),
+  (290,299,'SC'),(300,319,'GA'),(320,349,'FL'),(350,369,'AL'),(370,385,'TN'),(386,397,'MS'),(398,399,'GA'),(400,427,'KY'),(430,459,'OH'),(460,479,'IN'),
+  (480,499,'MI'),(500,528,'IA'),(530,549,'WI'),(550,567,'MN'),(570,577,'SD'),(580,588,'ND'),(590,599,'MT'),(600,629,'IL'),(630,658,'MO'),(660,679,'KS'),
+  (680,693,'NE'),(700,714,'LA'),(716,729,'AR'),(730,749,'OK'),(750,799,'TX'),(800,816,'CO'),(820,831,'WY'),(832,838,'ID'),(840,847,'UT'),(850,865,'AZ'),
+  (870,884,'NM'),(885,885,'TX'),(889,898,'NV'),(900,961,'CA'),(967,968,'HI'),(970,979,'OR'),(980,994,'WA'),(995,999,'AK')]
+def zip_state(z):
+    m = re.match(r'\s*(\d{5})', str(z or ''))
+    if not m or m.group(1) == '00000': return None
+    n = int(m.group(1)[:3])
+    return next((st for lo, hi, st in ZIP3 if lo <= n <= hi), None)
+STATS = collections.Counter()
+def addr_state(lines):
+    # MnGeo address lines: the city line looks like "Fargo, ND 58103"; take the last one that does.
+    for x in reversed([l for l in lines if l]):
+        m = re.search(r'\b([A-Z]{2})\s+\d{5}', x)
+        if m and m.group(1) in STATES: return m.group(1)
+    return None
 
 def clean(r):
     return {k: (None if (isinstance(x, float) and np.isnan(x)) else x) for k, x in r.items()}
@@ -44,21 +60,32 @@ def title(s):
 def load_wilkin():
     g = gpd.read_file(f'{RAW}/wilkin_parcels.geojson')
     g = g[g['acres_poly'].fillna(0) >= MIN_AC].copy()
+    names = {n['objectid']: n for n in json.load(open(f'{RAW}/wilkin_names.json'))}
     rows = []
     for _, r in g.iterrows():
         a = clean(r)
         uc = a.get('useclass1')
-        ost = mn_state(a)
+        n = names.get(a['objectid'], {})
+        own, tp = title(n.get('owner_name') or a['owner_name']), title(n.get('tax_name') or a['tax_name'])
+        ost = addr_state([n.get(f'own_add_l{i}') for i in range(1, 5)]) if own else None
+        tst = addr_state([n.get(f'tax_add_l{i}') for i in range(1, 5)])
         rows.append({
             'id': 'W' + str(a['state_pin'] or a['objectid']).replace('27167-', ''),
             'co': 'Wilkin', 'pin': a['county_pin'], 'ac': round(float(a['acres_poly']), 1),
             'dac': round(float(a['acres_deed']), 1) if a['acres_deed'] else None,
-            'own': a['tax_name'] or a['owner_name'], 'ost': ost,
+            'own': own, 'tp': tp, 'ost': ost, 'tst': tst,
             'cls': uc if isinstance(uc, str) and uc else 'Not listed',
             'val': int(a['emv_total']) if a['emv_total'] else None, 'lval': int(a['emv_land']) if a['emv_land'] else None,
             'legal': a['abb_legal'], 'str': f"S{int(a['section'])} T{int(a['township'])}N R{int(a['range'])}W" if a['section'] else None,
             'geometry': a['geometry']})
     return gpd.GeoDataFrame(rows, crs=4326)
+
+def nd_state(t):
+    st = (t.get('OwnerState') or '').strip().upper()
+    if st in STATES: STATS['nd_state_ok'] += 1; return st
+    z = zip_state(t.get('OwnerZip'))
+    if z: STATS['nd_state_from_zip'] += 1; return z
+    STATS['nd_state_unknown'] += 1; return None
 
 def load_richland():
     g = gpd.read_file(f'{RAW}/richland_parcels.geojson')
@@ -78,7 +105,8 @@ def load_richland():
         rows.append({
             'id': 'R' + str(a['GISID']), 'co': 'Richland', 'pin': t0.get('ParcelID') or a['GISID'],
             'ac': round(float(a['CalculatedAcres']), 1), 'dac': None,
-            'own': title(t0.get('OwnerName')), 'ost': t0.get('OwnerState'),
+            'own': '; '.join(dict.fromkeys(title(t.get('OwnerName')) for t in ts if t.get('OwnerName'))) or None, 'tp': None,
+            'ost': ' '.join(dict.fromkeys(x for x in (nd_state(t) for t in ts) if x)) or None, 'tst': None,
             'cls': cls, 'val': int(s('TotalValue')) if ts and s('TotalValue') else None,
             'lval': int(agv) if agv else None,
             'legal': t0.get('LegalDescription'), 'str': f"S{int(a['Section'])} T{int(a['Township'])}N R{int(a['Range'])}W" if a['Section'] else None,
@@ -161,11 +189,12 @@ def finish(g, area, fips, key):
     for _, a in g.iterrows():
         pid = a['id']; props = clean({k: a[k] for k in g.columns if k != 'geometry'})
         props.update(s.get(pid, {})); props.update(c.get(pid, {})); tw = t.get(pid); props['twp'] = (tw if isinstance(tw, str) else '').replace(' township', ' Twp').replace(' city', ' (city)') or None
-        props['otype'] = owner_type(props.get('own'))
-        st = 'MN' if key == 'wilkin' else 'ND'
-        props['absentee'] = (props['ost'] not in (None, '', 'MN', 'ND')) if props.get('ost') else None
+        props['otype'] = owner_type(props.get('own') or props.get('tp'))
+        sts = sorted({x for v in (props.get('ost'), props.get('tst')) if v for x in v.split()})
+        props['sts'] = sts
+        props['absentee'] = any(x not in ('MN', 'ND') for x in sts) if sts else None
         props = {k: (None if (isinstance(v, float) and np.isnan(v)) else (int(v) if v is not None and (isinstance(v, np.integer) or k in ('val', 'lval')) else v)) for k, v in props.items()}
-        props = {k: v for k, v in props.items() if v is not None}
+        props = {k: v for k, v in props.items() if v is not None and v != []}
         geom = mapping(a.geometry)
         def rnd(o):
             if isinstance(o, (list, tuple)):
@@ -183,5 +212,7 @@ for key, loader, area, fips in [('wilkin', load_wilkin, 'MN167', '27167'), ('ric
 for key in ['wilkin', 'richland']:
     cs = gpd.read_file(f'{RAW}/county_{key}.geojson').to_crs(EA); cs['geometry'] = cs.simplify(30); cs = cs.to_crs(4326)
     json.dump(json.loads(cs[['NAME', 'geometry']].to_json()), open(f'{OUT}/county_{key}.geojson', 'w'), separators=(',', ':'))
+json.dump(meta, open(f'{OUT}/meta.json', 'w'), indent=1)
+meta['stateStats'] = dict(STATS)
 json.dump(meta, open(f'{OUT}/meta.json', 'w'), indent=1)
 print(meta)

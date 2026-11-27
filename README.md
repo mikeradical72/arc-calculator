@@ -29,7 +29,13 @@ The ARC-IC vs ARC-CO vs PLC calculator (`#arc`), unchanged. `node tests/calc.tes
 
 Estimates and public records only. This app doesn't show whether land is for sale or rent, and it isn't a survey. Not affiliated with USDA or either county.
 
-### Parcel size and saved searches
-- **Parcel size** sits at the top of the search panel (always visible, also on phones): quick presets **~40 ac (35–45)**, **~80 ac (75–85)**, **~160 ac (150–170)**, **320+ ac (300 and up)**, or **Any size**, plus custom min/max acre boxes. Ranges are inclusive and use GIS acres.
-- **Saved searches**: "Save search" stores a named copy of the current filters — parcel size included — so each saved search has its own acre range, county, township, soil and other filters. Pick one from the dropdown to load it; if you change it, an **Update** button appears; **Delete** removes it. Saved searches live in localStorage. Ruled-out parcels are shared across searches.
-- Acres are shown in bold on every list row and at the top of the details panel (GIS acres, plus deeded acres where the county lists them).
+### Parcel size
+Parcel size sits at the top of the search panel: **~40 ac (35–45)**, **~80 ac (75–85)**, **~160 ac (150–170)**, **320+ ac**, **Any size**, plus custom min/max boxes (GIS acres, both ends included). Acres are bold on every list row and at the top of the details panel.
+
+### Separate searches (tabs)
+Each tab above the map is its own search, with its own filters (size, name, states, soil…), its own **ruled-out list**, sort order and map view. Tapping a parcel rules it out only in the active tab. Use **+ New** to add a tab; the **⋯** menu has Rename, Duplicate, Export as JSON, Import JSON and Delete. On phones the tab strip scrolls sideways. Everything is saved in localStorage (key `baseacre:land:v1`, format v2). Older saves move over on first load: the old global ruled-out list and filters go into the default (or active) tab.
+
+### Owner / taxpayer name and mailing state
+- **Name search**: case-insensitive partial match on the owner name **and** the taxpayer name (e.g. `yaggie`). Matches are highlighted in the list.
+- **Mailing state**: a multi-select of every state in the data, with counts, plus **Unknown** and **Outside MN/ND**. A parcel matches if the owner's or the taxpayer's mailing state is one you picked (OR).
+- Wilkin (MnGeo) gives `owner_name` and `tax_name` separately, each with its own address, but the owner name is filled for only about 520 of 4,748 parcels. Richland (ND tax roll) gives one owner/mailing name per record and no separate taxpayer. If a Richland roll state isn't a valid code (e.g. "ST" from "St Cloud"), the state is worked out from the first three digits of the ZIP.
